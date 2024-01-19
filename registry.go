@@ -3,6 +3,7 @@ package nacosplugin
 import (
 	"fmt"
 	"github.com/go-chassis/go-chassis/v2/core/registry"
+	utiltags "github.com/go-chassis/go-chassis/v2/pkg/util/tags"
 	"github.com/go-chassis/openlog"
 	"github.com/nacos-group/nacos-sdk-go/v2/clients"
 	"github.com/nacos-group/nacos-sdk-go/v2/clients/naming_client"
@@ -187,6 +188,103 @@ func (r *Registrator) Close() error {
 	return nil
 }
 
+type Discovery struct {
+	Name           string
+	registryClient naming_client.INamingClient
+	opts           *registry.Options
+}
+
+// GetMicroServiceID get micro-service id
+func (r *Discovery) GetMicroServiceID(appID, microServiceName, version, env string) (string, error) {
+	sid := genSid(appID, microServiceName, version, env)
+	return sid, nil
+}
+
+// GetAllMicroServices get all microservices
+func (r *Discovery) GetAllMicroServices() ([]*registry.MicroService, error) {
+	var mss []*registry.MicroService
+	param := vo.GetAllServiceInfoParam{
+		GroupName: "jecloud",
+		PageNo:    1,
+		PageSize:  10,
+	}
+	appVos, err := r.registryClient.GetAllServicesInfo(param)
+
+	if err != nil {
+		openlog.GetLogger().Error("GetAllApplications failed: " + err.Error())
+		return nil, err
+	}
+	for _, app := range appVos.Doms {
+		mss = append(mss, &registry.MicroService{
+			ServiceName: app,
+		})
+	}
+	return mss, nil
+}
+
+// GetMicroService get micro-service
+func (r *Discovery) GetMicroService(microServiceID string) (*registry.MicroService, error) {
+
+	param := vo.GetServiceParam{
+		ServiceName: microServiceID,
+		GroupName:   "jecloud",
+	}
+	app, err := r.registryClient.GetService(param)
+	if err != nil {
+		openlog.GetLogger().Error("GetMicroService failed: " + err.Error())
+		return nil, err
+	}
+	return &registry.MicroService{
+		AppID:       microServiceID,
+		ServiceName: app.Name,
+	}, nil
+}
+
+// GetMicroServiceInstances get micro-service instances
+func (r *Discovery) GetMicroServiceInstances(consumerID, providerID string) ([]*registry.MicroServiceInstance, error) {
+
+	//instanceVos, err := api.QueryAllInstanceByAppId(providerID)
+	//if err != nil {
+	//	openlog.GetLogger().Error("GetMicroServiceInstances failed: " + err.Error())
+	//	return nil, err
+	//}
+	//instances := filterInstances(instanceVos)
+	instances := make([]*registry.MicroServiceInstance, 0)
+	return instances, nil
+}
+
+// filterInstances filter instances
+//func filterInstances(providerInstances []eureka.InstanceVo) []*registry.MicroServiceInstance {
+//	instances := make([]*registry.MicroServiceInstance, 0)
+//	for _, ins := range providerInstances {
+//		msi := instanceVoToMicroServiceInstance(&ins)
+//		instances = append(instances, msi)
+//	}
+//	return instances
+//}
+
+// FindMicroServiceInstances find micro-service instances
+func (r *Discovery) FindMicroServiceInstances(consumerID, microServiceName string, tags utiltags.Tags) ([]*registry.MicroServiceInstance, error) {
+	//api, _ := r.registryClient.Api()
+	//providerInstances, err := api.QueryAllInstanceByAppId(microServiceName)
+	//if err != nil {
+	//	return nil, fmt.Errorf("FindMicroServiceInstances failed, err: %s", err)
+	//}
+	//instances := filterInstances(providerInstances)
+	//return instances, nil
+	instances := make([]*registry.MicroServiceInstance, 0)
+	return instances, nil
+}
+
+// AutoSync auto sync
+func (r *Discovery) AutoSync() {
+}
+
+// Close close the file
+func (r *Discovery) Close() error {
+	return nil
+}
+
 func NewNacosRegistry(opts registry.Options) registry.Registrator {
 
 	//serviceUrls := make([]string, 0)
@@ -196,9 +294,6 @@ func NewNacosRegistry(opts registry.Options) registry.Registrator {
 		nacosConfig := *constant.NewServerConfig(addr, 8848, constant.WithContextPath("/nacos"))
 		serviceConfigs = append(serviceConfigs, nacosConfig)
 	}
-	//sc := []constant.ServerConfig{
-	//	*constant.NewServerConfig("192.168.20.26", 8848, constant.WithContextPath("/nacos")),
-	//}
 
 	//create ClientConfig
 	cc := *constant.NewClientConfig(
@@ -223,10 +318,47 @@ func NewNacosRegistry(opts registry.Options) registry.Registrator {
 	return &Registrator{
 		Name:           "",
 		registryClient: client,
+		opts:           &opts,
+	}
+}
+
+// NewEurekaRegistry new eureka discovery
+func NewNacosDiscovery(opts registry.Options) registry.ServiceDiscovery {
+	serviceConfigs := []constant.ServerConfig{}
+	for _, addr := range opts.Addrs {
+		//url := fmt.Sprintf("http://%s/eureka", addr)
+		nacosConfig := *constant.NewServerConfig(addr, 8848, constant.WithContextPath("/nacos"))
+		serviceConfigs = append(serviceConfigs, nacosConfig)
+	}
+
+	//create ClientConfig
+	cc := *constant.NewClientConfig(
+		constant.WithNamespaceId(""),
+		constant.WithTimeoutMs(5000),
+		constant.WithNotLoadCacheAtStart(true),
+		constant.WithLogDir("/tmp/nacos/log"),
+		constant.WithCacheDir("/tmp/nacos/cache"),
+		constant.WithLogLevel("debug"),
+	)
+
+	// create naming client
+	client, err := clients.NewNamingClient(
+		vo.NacosClientParam{
+			ClientConfig:  &cc,
+			ServerConfigs: serviceConfigs,
+		},
+	)
+	if err != nil {
+		fmt.Printf("%s", err)
+	}
+	return &Discovery{
+		Name:           nacosRegistry,
+		registryClient: client,
+		opts:           &opts,
 	}
 }
 
 func Init() {
 	registry.InstallRegistrator(nacosRegistry, NewNacosRegistry)
-	//registry.InstallServiceDiscovery(nacosRegistry, NewEurekaDiscovery)
+	registry.InstallServiceDiscovery(nacosRegistry, NewNacosDiscovery)
 }
