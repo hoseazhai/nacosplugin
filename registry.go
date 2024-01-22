@@ -46,7 +46,7 @@ func (r *Registrator) RegisterServiceInstance(sid string, instance *registry.Mic
 	//}
 	//naming_client.INamingClient.
 	success, err := r.registryClient.RegisterInstance(vo)
-	if err != nil || success {
+	if err != nil || !success {
 		openlog.GetLogger().Error("register instance failed.")
 		return "", err
 	}
